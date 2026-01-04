@@ -40,7 +40,7 @@ just preview
 The application supports INI files with keybindings in the format:
 
 ```ini
-Bindings[0]=(Key=38,Ctrl=False,Alt=False,Shift=False,Command="MoveForward")
+Bindings[0]=(Key=38,Ctrl=False,Alt=False,Shift=False,Command=MoveForward)
 ```
 
 Where:
