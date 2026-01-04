@@ -5,7 +5,7 @@ import { fileURLToPath, URL } from 'node:url'
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  base: '/vanguard-keybind-editor/',
+  // base: '/vanguard-keybind-editor/',
   plugins: [
     vue(),
     vuetify({ autoImport: true })
