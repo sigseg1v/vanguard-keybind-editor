@@ -35,6 +35,9 @@ just preview
 4. Toggle modifier keys (Ctrl, Alt, Shift) with checkboxes
 5. Click "Export INI File" to download your modified configuration
 
+Example:
+![example](/example.png)
+
 ## File Format
 
 The application supports INI files with keybindings in the format:
