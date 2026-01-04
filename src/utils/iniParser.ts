@@ -14,31 +14,70 @@ export function parseIni(content: string): IniStructure {
   }
 
   lines.forEach((line, idx) => {
-    const trimmed = line.trim()
+    const rawLine = line // preserve original raw line exactly
+    const trimmed = rawLine.trim()
 
-    // Detect binding line with regex
-    // Format: Bindings[0]=(Key=38,Ctrl=False,Alt=False,Shift=False,Command="MoveForward")
-    // OR:     Bindings[0]=(Key=38,Ctrl=False,Alt=False,Shift=False,Command=MoveForward)
-    const bindingMatch = line.match(
-      /Bindings\[(\d+)\]=\(Key=(\d+),Ctrl=(True|False),Alt=(True|False),Shift=(True|False),Command=(?:"([^"]*)"|([^)]*)?)\)/
+    // Detect binding line robustly:
+    // - tolerate leading/trailing whitespace
+    // - tolerate CR characters (trim takes care of them)
+    // - capture index and everything inside the parentheses
+    const bindingMatch = trimmed.match(
+      /^\s*Bindings\[(\d+)\]\s*=\s*\(([\s\S]*)\)\s*$/
     )
 
     if (bindingMatch) {
-      // Command can be in group 6 (quoted) or group 7 (unquoted)
-      const command = bindingMatch[6] !== undefined ? bindingMatch[6] : (bindingMatch[7] || '')
+      const index = parseInt(bindingMatch[1], 10)
+      const body = bindingMatch[2].trim()
+
+      // Match key=value pairs where value is either:
+      //  - a quoted string (supports escaped quotes) OR
+      //  - anything up to the next comma or end
+      // This is tolerant of pairs appearing in any order and of missing pairs.
+      const pairRe = /([A-Za-z0-9_]+)=("(?:[^"\\]|\\.)*"|[^,)]*)/g
+      const pairs: Record<string, string> = {}
+      let m: RegExpExecArray | null
+      while ((m = pairRe.exec(body)) !== null) {
+        const key = m[1]
+        let val = (m[2] ?? '').trim()
+        if (val.startsWith('"') && val.endsWith('"')) {
+          // Remove surrounding quotes and unescape \" sequences
+          val = val.slice(1, -1).replace(/\\"/g, '"')
+        }
+        pairs[key] = val
+      }
+
+      const toBool = (v?: string): boolean | undefined => {
+        if (v === undefined) return undefined
+        const low = v.toLowerCase()
+        if (low === 'true' || low === 'false') return low === 'true'
+        if (v === '1') return true
+        if (v === '0') return false
+        return undefined
+      }
+      const toInt = (v?: string): number | undefined => {
+        if (v === undefined) return undefined
+        if (/^-?\d+$/.test(v)) return parseInt(v, 10)
+        return undefined
+      }
 
       const bindingData: BindingData = {
-        index: parseInt(bindingMatch[1]),
-        key: parseInt(bindingMatch[2]),
-        ctrl: bindingMatch[3] === 'True',
-        alt: bindingMatch[4] === 'True',
-        shift: bindingMatch[5] === 'True',
-        command: command
+        index,
+        key: toInt(pairs['Key']),
+        ctrl: toBool(pairs['Ctrl']),
+        alt: toBool(pairs['Alt']),
+        shift: toBool(pairs['Shift']),
+        defaultCtrl: toBool(pairs['DefaultCtrl']),
+        defaultAlt: toBool(pairs['DefaultAlt']),
+        defaultShift: toBool(pairs['DefaultShift']),
+        default: toInt(pairs['Default']),
+        // Keep empty string as empty string (Command=) instead of undefined;
+        // if you prefer undefined, change the expression below.
+        command: pairs['Command'] ?? undefined
       }
 
       structure.lines.push({
         type: 'binding',
-        raw: line,
+        raw: rawLine,
         lineNumber: idx,
         parsed: bindingData
       })
@@ -47,7 +86,7 @@ export function parseIni(content: string): IniStructure {
       // Section header
       structure.lines.push({
         type: 'section',
-        raw: line,
+        raw: rawLine,
         lineNumber: idx,
         parsed: { name: trimmed.slice(1, -1) }
       })
@@ -55,21 +94,21 @@ export function parseIni(content: string): IniStructure {
       // Comment line
       structure.lines.push({
         type: 'comment',
-        raw: line,
+        raw: rawLine,
         lineNumber: idx
       })
     } else if (trimmed === '') {
       // Blank line
       structure.lines.push({
         type: 'blank',
-        raw: line,
+        raw: rawLine,
         lineNumber: idx
       })
     } else {
       // Any other content
       structure.lines.push({
         type: 'other',
-        raw: line,
+        raw: rawLine,
         lineNumber: idx
       })
     }
@@ -87,13 +126,25 @@ export function extractKeybinds(structure: IniStructure): Keybind[] {
   for (const line of structure.lines) {
     if (line.type === 'binding' && line.parsed) {
       const binding = line.parsed as BindingData
+
+      // Defensive defaults: ensure numbers/booleans are defined for UI consumption.
+      // If you prefer to keep undefineds, drop the fallback values below.
+      const keyVal = binding.key ?? -1
+      const ctrlVal = binding.ctrl ?? false
+      const altVal = binding.alt ?? false
+      const shiftVal = binding.shift ?? false
+
       keybinds.push({
         index: binding.index,
-        key: binding.key,
-        keyName: keycodeToName(binding.key),
-        ctrl: binding.ctrl,
-        alt: binding.alt,
-        shift: binding.shift,
+        key: keyVal,
+        keyName: keycodeToName(keyVal),
+        ctrl: ctrlVal,
+        alt: altVal,
+        shift: shiftVal,
+        default: binding.default,
+        defaultCtrl: binding.defaultCtrl,
+        defaultAlt: binding.defaultAlt,
+        defaultShift: binding.defaultShift,
         command: binding.command
       })
     }
@@ -119,8 +170,26 @@ export function serializeIni(structure: IniStructure, updatedBindings: Keybind[]
       const updated = bindingMap.get(originalBinding.index)
 
       if (updated) {
-        // Reconstruct binding line with new values (without quotes to match original format)
-        return `Bindings[${updated.index}]=(Key=${updated.key},Ctrl=${updated.ctrl ? 'True' : 'False'},Alt=${updated.alt ? 'True' : 'False'},Shift=${updated.shift ? 'True' : 'False'},Command="${updated.command}")`
+        // Reconstruct binding line with new values.
+        // Keep a consistent ordering for written bindings (you can change order if needed).
+        // Command is quoted to be safe (matches most original files).
+        const cmdPart = updated.command === undefined
+          ? undefined
+          : (updated.command === '' ? 'Command=' : `Command="${updated.command.replace(/"/g, '\\"')}"`)
+
+        const parts = [
+          (updated.defaultCtrl !== undefined ? `DefaultCtrl=${updated.defaultCtrl ? 'True' : 'False'}` : undefined),
+          (updated.defaultAlt  !== undefined ? `DefaultAlt=${updated.defaultAlt ? 'True' : 'False'}` : undefined),
+          (updated.defaultShift !== undefined ? `DefaultShift=${updated.defaultShift ? 'True' : 'False'}` : undefined),
+          (updated.default !== undefined ? `Default=${updated.default}` : undefined),
+          `Key=${updated.key}`,
+          `Ctrl=${updated.ctrl ? 'True' : 'False'}`,
+          `Alt=${updated.alt ? 'True' : 'False'}`,
+          `Shift=${updated.shift ? 'True' : 'False'}`,
+          cmdPart
+        ].filter(x => x !== undefined) as string[]
+
+        return `Bindings[${updated.index}]=(${parts.join(',')})\r`
       }
     }
 

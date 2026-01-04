@@ -7,10 +7,14 @@ export interface IniLine {
 
 export interface BindingData {
   index: number        // e.g., 0 from Bindings[0]
-  key: number          // e.g., 38
-  ctrl: boolean
-  alt: boolean
-  shift: boolean
+  key?: number          // e.g., 38
+  ctrl?: boolean
+  alt?: boolean
+  shift?: boolean
+  defaultCtrl?: boolean
+  defaultAlt?: boolean
+  defaultShift?: boolean
+  default?: number
   command: string      // e.g., "MoveForward"
 }
 
