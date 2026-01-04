@@ -120,7 +120,7 @@ export function serializeIni(structure: IniStructure, updatedBindings: Keybind[]
 
       if (updated) {
         // Reconstruct binding line with new values (without quotes to match original format)
-        return `Bindings[${updated.index}]=(Key=${updated.key},Ctrl=${updated.ctrl ? 'True' : 'False'},Alt=${updated.alt ? 'True' : 'False'},Shift=${updated.shift ? 'True' : 'False'},Command=${updated.command})`
+        return `Bindings[${updated.index}]=(Key=${updated.key},Ctrl=${updated.ctrl ? 'True' : 'False'},Alt=${updated.alt ? 'True' : 'False'},Shift=${updated.shift ? 'True' : 'False'},Command="${updated.command}")`
       }
     }
 
