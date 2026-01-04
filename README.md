@@ -2,6 +2,8 @@
 
 A modern web-based editor for Vanguard game keybindings using Vue 3, TypeScript, and Vuetify.
 
+Access it here: https://sigseg1v.github.io/vanguard-keybind-editor/
+
 ## Features
 
 - Drag-and-drop INI file upload
